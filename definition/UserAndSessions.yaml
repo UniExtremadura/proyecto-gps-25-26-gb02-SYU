@@ -1,0 +1,739 @@
+openapi: 3.0.4
+info:
+  title: Sesiones y usuarios (SYU)
+  description: |-
+    Uno de los microservicios que componen Bandcamp. Se encargará de gestionar la información de los usuarios (perfiles, credenciales y compras) así como la información de las sesiones en la plataforma.
+  version: 2.0.0
+externalDocs:
+  description: Github access
+  url: https://github.com/orgs/UniExtremadura/teams/gb02
+servers:
+  - url: http://localhost
+tags:
+  - name: user
+    description: Datos de usuarios
+  - name: session
+    description: Tokens de inicio de sesión y sus fechas de validez
+  - name: favs
+    description: Todos los álbumes, canciones y artistas marcados como favoritos por los usuarios
+paths:
+  /user/link-artist:
+    post:
+      tags:
+        - user
+      summary: Create a new artist
+      description: Creates a new artist in the platform
+      operationId: ArtistLinkData
+      requestBody:
+        $ref: "#/components/requestBodies/ArtistLinkData"
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  artistId:
+                    type: integer
+                    description: ID of the newly created artist
+                    example: 381734
+        '400':
+          description: Invalid input
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - write
+      
+  /user/{username}:
+    patch:
+      tags:
+        - user
+      summary: Update an existing user
+      description: Update an user of the platform.
+      operationId: updateUser
+      parameters:
+        - name: username
+          in: path
+          description: Username of the user to update
+          required: true
+          schema:
+            type: string
+      requestBody:
+        $ref: "#/components/requestBodies/RegistrationUser"
+      responses:
+        '200':
+          description: Successful operation
+        '400':
+          description: Invalid input
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - write
+    get:
+      tags:
+        - user
+      summary: Get an user from the platform
+      description: Obtain an user data from the platform
+      operationId: getUser
+      parameters:
+        - name: username
+          in: path
+          description: Username to search the user by
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Invalid input
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - read
+    delete:
+      tags:
+        - user
+      summary: Deletes an user from the platform
+      description: Deletes a user from the platform given its username
+      operationId: delUser
+      parameters:
+        - name: username
+          in: path
+          description: Username of the user to delete
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful operation
+        '400':
+          description: Invalid input
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - write
+
+  /auth:
+    get:
+      tags:
+        - session
+      summary: Authenticates an user by the token stored in their cookies
+      description: Authenticates an user by the token stored in their cookies
+      operationId: authSession
+      parameters:
+        - name: token
+          in: path
+          description: Session token to be authenticated
+          required: true
+          schema:
+            $ref: '#/components/schemas/SessionToken'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  
+  
+  /login:
+    post:
+      tags:
+        - session
+      summary: Checks user and pasword and returns a session token if correct
+      description: Checks user and pasword and returns a session token if correct
+      operationId: login
+      requestBody:
+        $ref: "#/components/requestBodies/Credentials"
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionToken"
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  
+  /logout:
+    post:
+      tags:
+        - session
+      summary: Logs out an user by invalidating their session token
+      description: Logs out an user by invalidating their session token
+      operationId: logout
+      parameters:
+        - name: token
+          in: path
+          description: Session token to be invalidated
+          required: true
+          schema:
+            $ref: '#/components/schemas/SessionToken'
+      responses:
+        '200':
+          description: Successful operation
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /register:
+    post:
+      tags:
+        - session
+      summary: Registers an user in the platform
+      description: Registers an user in the platform
+      operationId: register
+      requestBody:
+        $ref: "#/components/requestBodies/RegistrationUser"
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+                
+  /favs/songs:
+    get:
+      tags:
+        - favs
+      summary: Get fav songs of a user
+      description: Get fav songs of a user as a list of the songs ids
+      operationId: getFavSongs
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ids'
+        '400':
+          description: Invalid input
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - read
+    
+  /favs/songs/{songId}:
+    post:
+      tags:
+        - favs
+      summary: Add a song to user favorites.
+      description: Add a song to user favorites.
+      operationId: favSong
+      parameters:
+        - name: songId
+          in: path
+          description: ID of the song which will be added to favs
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful operation
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - write
+  
+    delete:
+      tags:
+        - favs
+      summary: Remove a song from user favs
+      description: Remove a song from user favs
+      operationId: unfavSong
+      parameters:
+        - name: songId
+          in: path
+          description: ID of the song to remove from favs
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful operation
+        '400':
+          description: Invalid input
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - write
+  
+  /favs/artists:
+    get:
+      tags:
+        - favs
+      summary: Get fav artists of a user
+      description: Get fav artists of a user as a list of the songs ids
+      operationId: getFavArtists
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ids'
+        '400':
+          description: Invalid input
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - read
+
+  /favs/artists/{artistId}:
+    post:
+      tags:
+        - favs
+      summary: Add an artist to user favorites.
+      description: Add an artist to user favorites.
+      operationId: favArtist
+      parameters:
+        - name: artistId
+          in: path
+          description: ID of the artist to be added to favs
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful operation
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - write
+  
+    delete:
+      tags:
+        - favs
+      summary: Remove an artist from user favs
+      description: Remove an artist from user favs
+      operationId: unfavArtist
+      parameters:
+        - name: artistId
+          in: path
+          description: ID of the artist to remove from favs
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful operation
+        '400':
+          description: Invalid input
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - write
+
+  /favs/albums:
+    get:
+      tags:
+        - favs
+      summary: Get fav albums of a user
+      description: Get fav artists of a user as a list of the songs ids
+      operationId: getFavAlbums
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ids'
+        '400':
+          description: Invalid input
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - read
+
+  /favs/albums/{albumId}:
+    post:
+      tags:
+        - favs
+      summary: Add an album to user favorites.
+      description: Add an album to user favorites.
+      operationId: favAlbum
+      parameters:
+        - name: albumId
+          in: path
+          description: ID of the album to be added to favs
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful operation
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - write
+  
+    delete:
+      tags:
+        - favs
+      summary: Remove an album from user favs
+      description: Remove an album from user favs
+      operationId: unfavAlbum
+      parameters:
+        - name: albumId
+          in: path
+          description: ID of the album to remove from favs
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful operation
+        '400':
+          description: Invalid input
+        '422':
+          description: Validation exception
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      security:
+        - oversounds_auth:
+            - write
+
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        userId:
+          type: integer
+          format: int64
+          description: Unique identifier for the user
+          example: 10
+        username:
+          type: string
+          description: Username chosen by the user for authentication
+          example: asanchez
+        regDate:
+          type: string
+          description: Date when the user registered in the platform
+          example: '2023-10-10 17:32:00.0000'
+        name:
+          type: string
+          description: First name of the user
+          example: Adrián
+        firstLastName:
+          type: string
+          description: Last name of the user. Will be null if requested user is not the same as the authenticated one
+          example: Sánchez
+        secondLastName:
+          type: string
+          description: Second last name of the user. Will be null if requested user is not the same as the authenticated one
+          example: López
+        email:
+          type: string
+          description: Email address of the user
+          example: asanchez@email.com
+        password:
+          type: string
+          description: Hashed password for user authentication. Will be null if requested user is not the same as the authenticated one
+          example: '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5'
+        image:
+          type: string
+          description: Path to the profile image (stored in SYU service)
+          nullable: true
+          example: '/pfp/driox.png'
+        relatedArtist:
+          type: integer
+          description: ID of the artist associated with this user account, if applicable (null if not artist)
+          example: 381734
+
+    RegistrationUser:
+      type: object
+      properties:
+        username:
+          type: string
+          description: Username chosen by the user for authentication
+          example: asanchez
+        regDate:
+          type: string
+          description: Date when the user registered in the platform
+          example: '2023-10-10 17:32:00.0000'
+        name:
+          type: string
+          description: First name of the user
+          example: Adrián
+        firstLastName:
+          type: string
+          description: Last name of the user
+          example: Sánchez
+        secondLastName:
+          type: string
+          description: Second last name of the user
+          example: López
+        email:
+          type: string
+          description: Email address of the user
+          example: asanchez@email.com
+        password:
+          type: string
+          description: Hashed password for user authentication. Will be null if requested user is not the same as the authenticated one
+          example: '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5'
+        image:
+          type: string
+          format: byte
+          description: Base64 encoded profile image that will be stored in SYU service
+          nullable: true
+        relatedArtist:
+          type: integer
+          description: ID of the artist associated with this user account, if applicable (null if not artist)
+          example: 381734
+      required:
+        - nick
+        - fechaReg
+        - apellido1
+        - email
+        - contrasena
+        
+    Credentials:
+      type: object
+      properties:
+        username:
+          type: string
+          description: Username for authentication
+          example: 'pepe'
+        password:
+          type: string
+          description: Password for authentication
+          example: 'contraseña'
+      required:
+        - username
+        - password
+    
+    Ids:
+      type: array
+      description: List of unique identifiers
+      items:
+        type: integer
+        description: Unique identifier
+      example: [21, 323, 542, 29, 2717]
+    
+    Session:
+      type: object
+      properties:
+        id: 
+          type: integer
+          format: int64
+          description: Unique identifier for the session
+          example: 33
+        token:
+          type: string
+          description: Session token used for authentication
+          example: '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5'
+        expirationDate:
+          type: string
+          description: Expiration date and time of the session token
+          example: '2025-10-10 17:32:00.0000'
+    
+    SessionToken:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Session token used for authentication
+          example: '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5'
+      required:
+        - token
+    
+    ArtistLinkData:
+      type: object
+      properties:
+        artisticName:
+          type: string
+          description: Name of the artist
+          example: 'Katy Perry'
+        artisticBiography:
+          type: string
+          description: Biography of the artist
+          example: 'American singer, songwriter and actress known for her pop hits'
+        artisticEmail:
+          type: string
+          description: Contact email of the artist
+          example: 'contact@katyperry.com'
+        artisticImage:
+          type: string
+          description: URL or path to the artist's profile image
+          example: '/images/artists/katy-perry-profile.jpg'
+        socialMediaUrl:
+          type: string
+          description: URL to the artist's social media profile
+          example: 'https://twitter.com/katyperry'
+      required:
+        - artisticName
+        - artisticEmail
+          
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Error code identifying the type of error
+        message:
+          type: string
+          description: Human-readable error message describing the issue
+      required:
+        - code
+        - message
+    
+  requestBodies:
+    User:
+      description: User to be added to the platform
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/User'
+      required: true
+    
+    RegistrationUser:
+      description: User to be registered to the platform with credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RegistrationUser'
+      required: true
+    
+    Session:
+      description: Session to be stored into the platform
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Session'
+      required: true
+      
+    Credentials:
+      description: Credentials for login
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Credentials"
+    
+    ArtistLinkData:
+      description: Artist data to be created
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ArtistLinkData'
+      required: true
+    
+  securitySchemes:
+    oversounds_auth:
+      type: apiKey
+      in: cookie
+      name: oversounds_auth
