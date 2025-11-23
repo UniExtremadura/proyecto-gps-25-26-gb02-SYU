@@ -91,4 +91,118 @@ public class SessionController {
         }
     }
 
+    /**
+     * Authenticates a user and creates a new session.
+     * Accepts either username or email as identifier.
+     * 
+     * @param payload Map containing 'username' (username or email) and 'password'
+     * @return ResponseEntity with success message and session token, or error message
+     */
+    @PostMapping("/login")
+    public ResponseEntity<Map<String, Object>> loginUser(@RequestBody Map<String, Object> payload) {
+        try {
+            // Validate required fields
+            if (!payload.containsKey("username") || !payload.containsKey("password")) {
+                return ResponseEntity.badRequest().body(Response.getErrorResponse(400, "Username and password are required."));
+            }
+            
+            // Fetch user by username or email (auto-detect if contains @)
+            UsuarioDTO usuario;
+            if (payload.get("username").toString().contains("@")) {
+                usuario = Model.getModel().getUsuarioByMail(payload.get("username").toString());
+            } else {
+                usuario = Model.getModel().getUsuarioByNick(payload.get("username").toString());
+            }
+            
+            // Verify password
+            Boolean passwordMatch = SecureUtils.verifyPassword(payload.get("password").toString(), usuario.getPassword());
+            if (!passwordMatch) {
+                return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Wrong user or password."));
+            }
+            
+            // Create new session
+            SesionDTO sesion = new SesionDTO();
+            sesion.setUserId(usuario.getUserId());
+            java.util.Date expDate = new java.util.Date();
+            expDate.setTime(expDate.getTime() + SESSION_DURATION_MS);
+            sesion.setExpirationDate(new Date(expDate.getTime()));
+            sesion.setToken(SecureUtils.generateSessionToken());
+            Model.getModel().insertarSesion(sesion);
+            
+            return ResponseEntity.ok().body(Map.of("message", "Login successful.", "session_token", sesion.getToken()));
+        } catch (UserNotFoundException e) {
+            System.err.println("User not found during login: " + e.getMessage());
+            return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Wrong user or password."));
+        } catch (UnexpectedErrorException e) {
+            System.err.println("Unexpected error during login: " + e.getMessage());
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "An unknown error occurred during login."));
+        } catch (Exception e) {
+            System.err.println("Unexpected error during login: " + e.getMessage());
+             
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "An unknown error occurred during login."));
+        }
+    }
+
+    /**
+     * Validates a session token and returns the authenticated user's data.
+     * 
+     * @param token Session token from 'oversound_auth' cookie
+     * @return ResponseEntity with user data (without password), or error message
+     */
+    @GetMapping("/auth")
+    public ResponseEntity<Map<String, Object>> authenticateUser(@CookieValue(value = "oversound_auth", required = true) String token) {
+        try {
+            SesionDTO sesion = Model.getModel().getSessionByToken(token);
+            if (sesion == null) {
+                return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Invalid session token."));
+            }
+            
+            UsuarioDTO usuario = Model.getModel().getUsuario(sesion.getUserId());
+            usuario.setPassword(null); // Remove password from response
+            return ResponseEntity.ok().body(usuario.toMap());
+        } catch (SessionExpiredException e) {
+            System.err.println("Session expired during authentication: " + e.getMessage());
+            return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Session has expired."));
+        } catch (SessionNotFoundException e) {
+            System.err.println("Session not found during authentication: " + e.getMessage());
+            return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Invalid session token."));
+        } catch (UnexpectedErrorException e) {
+            System.err.println("Unexpected error during authentication: " + e.getMessage());
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "An unknown error occurred during authentication."));
+        } catch (Exception e) {
+            System.err.println("Unexpected error during authentication: " + e.getMessage());
+             
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "An unknown error occurred during authentication."));
+        }
+    }
+
+    /**
+     * Logs out a user by deleting their session.
+     * 
+     * @param token Session token from 'oversound_auth' cookie
+     * @return ResponseEntity with success message, or error message
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<Map<String, Object>> logoutUser(@CookieValue(value = "oversound_auth", required = true) String token) {
+        try {
+            SesionDTO sesion = Model.getModel().getSessionByToken(token);
+            if (sesion == null) {
+                return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Invalid session token."));
+            }
+            
+            Model.getModel().deleteSesion(sesion.getId());
+            return ResponseEntity.ok().body(Response.getOnlyMessage("Logged out successfully"));
+        } catch (SessionNotFoundException e) {
+            System.err.println("Session not found during logout: " + e.getMessage());
+            return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Invalid session token."));
+        } catch (UnexpectedErrorException e) {
+            System.err.println("Unexpected error during logout: " + e.getMessage());
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "An unknown error occurred during logout."));
+        } catch (Exception e) {
+            System.err.println("Unexpected error during logout: " + e.getMessage());
+             
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "An unknown error occurred during logout."));
+        }
+    }
+
 }
