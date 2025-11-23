@@ -1,18 +1,5 @@
 package com.gb02.syumsvc.controller;
 
-import java.util.Map;
-
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.web.bind.annotation.CookieValue;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
@@ -27,6 +14,21 @@ import com.gb02.syumsvc.model.dto.UsuarioDTO;
 import com.gb02.syumsvc.utils.Base64Img;
 import com.gb02.syumsvc.utils.Response;
 import com.gb02.syumsvc.utils.UsernameChecker;
+
+import java.util.Map;
+
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PostMapping;
 
 
 /**
@@ -175,6 +177,54 @@ public class UserController {
             System.err.println("Unexpected error updating user: " + e.getMessage());
              
             return ResponseEntity.status(500).body(Response.getErrorResponse(500, "Unexpected error occurred while updating user data."));
+        } 
+    }
+
+    /**
+     * Deletes a user account.
+     * User can only delete their own account.
+     * 
+     * @param nick Username to delete
+     * @param sessionToken Session token from 'oversound_auth' cookie (required)
+     * @return ResponseEntity with success message, or error message
+     */
+    @DeleteMapping("/user/{nick}")
+    public ResponseEntity<Map<String, Object>> deleteUser(@PathVariable String nick, @CookieValue(value = "oversound_auth", required = true) String sessionToken) {
+        try {
+            UsuarioDTO requestedUser = Model.getModel().getUsuarioByNick(nick);
+            int currentUserId = Model.getModel().getSessionByToken(sessionToken).getUserId();
+            
+            // Authorization check: user can only delete their own account
+            if (requestedUser.getUserId() != currentUserId) {
+                return ResponseEntity.status(403).body(Response.getErrorResponse(403, "You are not authorized to delete this user."));
+            }
+            String img = requestedUser.getImage();
+            Model.getModel().deleteUsuario(requestedUser.getUserId());
+            if (img != null && !img.isBlank()) {
+                java.nio.file.Path path = java.nio.file.Paths.get("src/main/resources/static" + img);
+                try {
+                    java.nio.file.Files.deleteIfExists(path);
+                } catch (java.io.IOException e) {
+                    System.err.println("Failed to delete image file: " + e.getMessage());
+                }
+            }
+            return ResponseEntity.ok().body(Response.getOnlyMessage("User deleted successfully."));
+        } catch (UserNotFoundException e) {
+            System.err.println("User not found during deletion: " + e.getMessage());
+            return ResponseEntity.status(404).body(Response.getErrorResponse(404, "User not found"));
+        } catch (SessionNotFoundException e) {
+            System.err.println("Session not found during user deletion: " + e.getMessage());
+            return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Invalid session token."));
+        } catch (SessionExpiredException e) {
+            System.err.println("Session expired during user deletion: " + e.getMessage());
+            return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Session has expired."));
+        } catch (UnexpectedErrorException e) {
+            System.err.println("Unexpected error deleting user: " + e.getMessage());
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "Unexpected error occurred while deleting user."));
+        } catch (Exception e) {
+            System.err.println("Unexpected error deleting user: " + e.getMessage());
+             
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "Unexpected error occurred while deleting user."));
         } 
     }
 
