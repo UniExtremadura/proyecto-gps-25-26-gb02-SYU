@@ -2,21 +2,31 @@ package com.gb02.syumsvc.controller;
 
 import java.util.Map;
 
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
+import com.gb02.syumsvc.exceptions.InvalidUsernameException;
 import com.gb02.syumsvc.exceptions.SessionExpiredException;
 import com.gb02.syumsvc.exceptions.SessionNotFoundException;
 import com.gb02.syumsvc.exceptions.UnexpectedErrorException;
 import com.gb02.syumsvc.exceptions.UserNotFoundException;
 import com.gb02.syumsvc.model.Model;
+import com.gb02.syumsvc.model.dto.SesionDTO;
 import com.gb02.syumsvc.model.dto.UsuarioDTO;
+import com.gb02.syumsvc.utils.Base64Img;
 import com.gb02.syumsvc.utils.Response;
+import com.gb02.syumsvc.utils.UsernameChecker;
 
 
 /**
@@ -83,6 +93,149 @@ public class UserController {
         } 
     }
 
+    /**
+     * Applies changes from a payload to a user's base data.
+     * Automatically hashes password if 'contrasena' field is present.
+     * 
+     * @param baseUser Original user data
+     * @param changes Changes to apply
+     * @return Modified user data
+     */
+    private Map<String, Object> applyUserChanges(Map<String, Object> baseUser, Map<String, Object> changes) {
+        for (String key : changes.keySet()) {
+            Object value = changes.get(key);
+            if (key.equals("password")) {
+                value = com.gb02.syumsvc.utils.SecureUtils.hashPassword((String) value);
+            }
+            if (key.equals("image")){
+                String b64 = (String) value;
+                String nick = changes.containsKey("username") ? (String) changes.get("username") : (String) baseUser.get("username");
+                String extension = Base64Img.saveB64(b64, nick);
+                value = "/pfp/" + nick + "." + extension;
+            }
+            if (key.equals("username")){
+                if(!UsernameChecker.isValidUsername((String)changes.get("username"))){
+                    throw new InvalidUsernameException();
+                }
+                if(baseUser.get("image") != null && !baseUser.get("image").toString().isBlank()){
+                    String oldImagePath = (String) baseUser.get("image");
+                    String newNick = (String) changes.get("username");
+                    String newImagePath = Base64Img.changeNick(oldImagePath, newNick);
+                    baseUser.put("image", newImagePath);
+                }
+            }
+            baseUser.put(key, value);
+        }
+        return baseUser;
+    }
+
+    /**
+     * Updates user information (partial update).
+     * User can only modify their own data.
+     * 
+     * @param nick Username to update
+     * @param payload Map containing fields to update
+     * @param sessionToken Session token from 'oversound_auth' cookie (required)
+     * @return ResponseEntity with updated user data, or error message
+     */
+    @PatchMapping("/user/{nick}")
+    public ResponseEntity<Map<String, Object>> patchUser(@PathVariable String nick, @RequestBody Map<String, Object> payload, @CookieValue(value = "oversound_auth", required = true) String sessionToken) {
+        try {
+            UsuarioDTO requestedUser = Model.getModel().getUsuarioByNick(nick);
+            int currentUserId = Model.getModel().getSessionByToken(sessionToken).getUserId();
+            
+            // Authorization check: user can only modify their own data
+            if (requestedUser.getUserId() != currentUserId) {
+                return ResponseEntity.status(403).body(Response.getErrorResponse(403, "You are not authorized to modify this user's data."));
+            }
+            
+            // Apply changes and update user
+            UsuarioDTO updatedUser = new UsuarioDTO();
+            updatedUser.fromMap(applyUserChanges(requestedUser.toMap(), payload));
+
+            Model.getModel().updateUsuario(currentUserId, updatedUser);
+            updatedUser.setPassword(null);
+            return ResponseEntity.ok().body(updatedUser.toMap());
+        } catch (InvalidUsernameException e) {
+            System.err.println("Invalid username during user update: " + e.getMessage());
+            return ResponseEntity.status(400).body(Response.getErrorResponse(400, e.getMessage()));
+        } catch (SessionNotFoundException e) {
+            System.err.println("Session not found during user update: " + e.getMessage());
+            return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Invalid session token."));
+        } catch (SessionExpiredException e) {
+            System.err.println("Session expired during user update: " + e.getMessage());
+            return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Session has expired."));
+        } catch (UserNotFoundException e) {
+            System.err.println("User not found during update: " + e.getMessage());
+            return ResponseEntity.status(404).body(Response.getErrorResponse(404, "User not found"));
+        } catch (UnexpectedErrorException e) {
+            System.err.println("Unexpected error updating user: " + e.getMessage());
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "Unexpected error occurred while updating user data."));
+        } catch (Exception e) {
+            System.err.println("Unexpected error updating user: " + e.getMessage());
+             
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "Unexpected error occurred while updating user data."));
+        } 
+    }
+
+    /**
+     * Links the authenticated user to an external artist record.
+     * Expects JSON body with: nombre, bio, fechainicio, email, socialmediaurl
+     * Calls an external service (placeholder) which returns the artist id. If successful,
+     * updates the current user's idArtista with the returned id and returns the updated user.
+     */
+    @PostMapping("/user/link-artist")
+    public ResponseEntity<Map<String, Object>> linkArtist(@RequestBody Map<String, Object> payload, @CookieValue(value = "oversound_auth", required = true) String token) {
+        Integer returnedArtistId = null;
+        try {
+            
+            if(payload.get("artisticName") == null) {
+                return ResponseEntity.status(400).body(Response.getErrorResponse(400, "Missing required field: artisticName."));
+            }
+
+            if(payload.get("artisticEmail") == null) {
+                return ResponseEntity.status(400).body(Response.getErrorResponse(400, "Missing required field: artisticEmail."));
+            }
+
+            SesionDTO sesion = Model.getModel().getSessionByToken(token);
+            int currentUserId = sesion.getUserId();
+            UsuarioDTO user = Model.getModel().getUsuario(currentUserId);
+            if (user.getRelatedArtist() != null && getArtist(user.getRelatedArtist()) != null) {
+                return ResponseEntity.status(400).body(Response.getErrorResponse(400, "User is already linked to an artist."));
+            }
+
+            returnedArtistId = createArtist(payload, token);
+            if (returnedArtistId == null) {
+                return ResponseEntity.status(502).body(Response.getErrorResponse(502, "Failed to link artist: external service error."));
+            }
+
+            // Update user with new artist id
+            user.setRelatedArtist(returnedArtistId);
+            Model.getModel().updateUsuario(currentUserId, user);
+            user.setPassword(null);
+
+            return ResponseEntity.ok().body(user.toMap());
+        } catch (SessionNotFoundException e) {
+            System.err.println("Session not found during link-artist: " + e.getMessage());
+            return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Invalid session token."));
+        } catch (SessionExpiredException e) {
+            System.err.println("Session expired during link-artist: " + e.getMessage());
+            return ResponseEntity.status(401).body(Response.getErrorResponse(401, "Session has expired."));
+        } catch (UserNotFoundException e) {
+            if(returnedArtistId != null) deleteArtist(returnedArtistId, token);
+            System.err.println("User not found during link-artist: " + e.getMessage());
+            return ResponseEntity.status(404).body(Response.getErrorResponse(404, "User not found"));
+        } catch (UnexpectedErrorException e) {
+            if(returnedArtistId != null) deleteArtist(returnedArtistId, token);
+            System.err.println("Unexpected error linking artist: " + e.getMessage());
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "Unexpected error occurred while linking artist."));
+        } catch (Exception e) {
+            if(returnedArtistId != null) deleteArtist(returnedArtistId, token);
+            System.err.println("General error linking artist: " + e.getMessage());
+            return ResponseEntity.status(500).body(Response.getErrorResponse(500, "Unexpected error occurred while linking artist."));
+        }
+    }
+
     private Map<String, Object> getArtist(int id){
         try {
             String url = TYA_SERVER+"/artist/"+id;
@@ -96,6 +249,48 @@ public class UserController {
             return null;
         } catch (Exception e) {
             System.err.println("Error calling external service: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private Integer createArtist(@RequestBody Map<String, Object> payload, String token) {
+        try {
+            String url = TYA_SERVER+"/artist/upload";
+            
+            // Configurar headers con cookie
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.add("Cookie", "oversound_auth=" + token);
+            
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
+            
+            // Hacer la request
+            ResponseEntity<Map<String, Object>> response = (ResponseEntity<Map<String, Object>>)(ResponseEntity<?>)restTemplate.postForEntity(url, request, Map.class);
+            
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                Map<String, Object> body = response.getBody();
+                return (Integer) body.get("artistId");
+            }
+            return null;
+        } catch (Exception e) {
+            System.err.println("Error calling external service: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private Integer deleteArtist(int id, String token){
+        try {
+            String url = TYA_SERVER+"/artist/"+id;
+            
+            // Configurar headers con cookie
+            HttpHeaders headers = new HttpHeaders();
+            headers.add("Cookie", "oversound_auth=" + token);
+            
+            HttpEntity<?> request = new HttpEntity<>(headers);
+            restTemplate.exchange(url, org.springframework.http.HttpMethod.DELETE, request, Void.class);
+            return id;
+        } catch (Exception e) {
+            System.err.println("Error calling external service to delete artist: " + e.getMessage());
             return null;
         }
     }
